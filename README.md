@@ -16,6 +16,11 @@ Este projeto permite interações avançadas com o Instagram, como postagem de f
 
 > 🚀 Este projeto é um **fork oficial do [`instagram-private-api`](https://github.com/dilame/instagram-private-api)**, com propósito de continuidade, atualização e adição de recursos que não existem na versão original.
 
+>📘 **Documentação em Português (PT-BR)**  
+> Este projeto está documentado em português brasileiro.  
+> Caso queira contribuir com uma versão em inglês, será muito bem-vindo! 🇧🇷
+
+
 ---
 
 ## Principais Recursos
