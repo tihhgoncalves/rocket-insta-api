@@ -26,6 +26,7 @@ export interface MediaConfigureOptions {
   posting_longitude?: string;
   media_latitude?: string;
   media_longitude?: string;
+  hideLikeAndViewCounts?: boolean;
 }
 
 export interface MediaConfigureTimelineOptions extends MediaConfigureOptions {
@@ -43,6 +44,8 @@ export interface MediaConfigureTimelineOptions extends MediaConfigureOptions {
   device_id?: string;
   creation_logger_session_id?: string;
   camera_make?: string;
+
+  hideLikeAndViewCounts?: boolean;
 }
 
 export interface MediaLocation {

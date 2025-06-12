@@ -5,6 +5,7 @@ export interface PostingPhotoOptions {
   caption?: string;
   usertags?: PostingUsertags;
   location?: PostingLocation;
+  hideLikeAndViewCounts?: boolean;
 }
 
 export interface PostingStoryPhotoOptions extends PostingStoryOptions {
