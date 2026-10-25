@@ -155,6 +155,8 @@ Login automático, busca de IDs, feed com marcação, convite de collab e story 
 
 Contribuições são bem-vindas! Abra uma [issue](https://github.com/tihhgoncalves/rocket-insta-api/issues) para relatar problemas ou sugerir melhorias.
 
+Consulte o [guia de contribuição](CONTRIBUTING.md) e as [convenções do projeto](AGENTS.md) para desenvolvimento, testes e cuidados com a sessão.
+
 ---
 
 ## 👨‍💻 Mantenedor
