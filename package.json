@@ -12,6 +12,7 @@
   },
   "scripts": {
     "login": "node src/cli.mjs login",
+    "import-cookies": "node src/cli.mjs import-cookies",
     "lookup": "node src/cli.mjs lookup",
     "feed": "node src/cli.mjs feed",
     "story": "node src/cli.mjs story",

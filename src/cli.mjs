@@ -4,21 +4,28 @@ import { InstagramBrowser } from './instagram.mjs';
 import { loadRecipe } from './recipe.mjs';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline/promises';
+import { AuthError } from './auth.mjs';
+import { parseCookieInput } from './cookies.mjs';
+import { readSecretInput } from './secret-input.mjs';
+import { normalizeUsername } from './profile.mjs';
 
-try { process.loadEnvFile(fileURLToPath(new URL('../.env', import.meta.url))); }
-catch (error) { if (error.code !== 'ENOENT') throw error; }
-
-const { values, positionals } = parseArgs({ allowPositionals: true, options: {
+let argumentsParsed;
+try { argumentsParsed = parseArgs({ allowPositionals: true, options: {
   account: { type: 'string', default: process.env.IG_USERNAME },
   publish: { type: 'boolean', default: false },
   headless: { type: 'boolean', default: true },
   headed: { type: 'boolean', default: false },
   manual: { type: 'boolean', default: false },
   help: { type: 'boolean', default: false },
-} });
+} }); } catch {
+  console.error(JSON.stringify({ error: 'INVALID_ARGUMENTS', message: 'Argumentos inválidos. Cookies só podem ser informados pela entrada padrão.' }));
+  process.exit(1);
+}
+const { values, positionals } = argumentsParsed;
 const [command, input] = positionals;
 const help = `Rocket Insta API — 0.0.1 beta
   npm run login -- --account seu_usuario
+  npm run import-cookies -- --account seu_usuario (JSON pela entrada padrão oculta)
   npm run lookup -- usuario_exemplo
   npm run inspect
   npm run feed -- examples/feed.json             (prévia local)
@@ -30,7 +37,8 @@ const help = `Rocket Insta API — 0.0.1 beta
 
 async function main() {
   if (values.help || !command) return console.log(help);
-  if (!['login', 'lookup', 'inspect', 'feed', 'story'].includes(command)) throw new Error(help);
+  if (!['login', 'import-cookies', 'lookup', 'inspect', 'feed', 'story'].includes(command)) throw new Error(help);
+  if (command === 'import-cookies' && positionals.length !== 1) throw new AuthError('COOKIE_ARGUMENTS_NOT_ALLOWED', 'Não informe cookies nem arquivos nos argumentos. Use a entrada padrão.');
   let recipe;
   if (command === 'feed' || command === 'story') {
     if (!input) throw new Error('Informe o caminho do arquivo JSON de publicação.');
@@ -39,6 +47,14 @@ async function main() {
     if (!values.publish) return;
   }
   if (command === 'lookup' && !input) throw new Error('Informe o username.');
+  try { process.loadEnvFile(fileURLToPath(new URL('../.env', import.meta.url))); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  if (!values.account) values.account = process.env.IG_USERNAME;
+  let cookies;
+  if (command === 'import-cookies') {
+    normalizeUsername(values.account);
+    cookies = parseCookieInput(await readSecretInput());
+  }
   const client = new InstagramBrowser({ headless: !values.headed, profileDir: process.env.IG_PROFILE_DIR });
   try {
     await client.open();
@@ -54,6 +70,10 @@ async function main() {
         password: process.env.IG_PASSWORD, manual: values.manual, timeout: values.manual ? 600000 : 120000,
         requestCode, onEvent: event => console.error(JSON.stringify(event)),
       }) }, null, 2));
+    } else if (command === 'import-cookies') {
+      const importedAccount = await client.importCookies(cookies, { account: values.account });
+      cookies = undefined;
+      console.log(JSON.stringify({ imported: true, account: importedAccount }, null, 2));
     } else if (command === 'lookup') {
       await client.assertAccount(values.account);
       const profile = await client.lookup(input);

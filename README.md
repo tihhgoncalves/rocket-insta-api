@@ -54,6 +54,9 @@ A versão **0.0.1 está em beta**. A integração oferece biblioteca JavaScript 
 # Autenticar e salvar a sessão
 npm run login
 
+# Importar uma sessão autenticada: os valores serão pedidos em entrada oculta
+npm run import-cookies -- --account seu_usuario
+
 # Consultar o ID de um perfil
 npm run lookup -- usuario_exemplo
 
@@ -117,6 +120,24 @@ Para collab, informe os usuários em `collaborators`. Para stories, use `mention
 ---
 
 ## 🖥️ Terminal e VPS
+
+### Importar uma sessão por cookies
+
+Como alternativa ao envio de senha, importe os cookies de uma sessão já autenticada. Execute `npm run import-cookies -- --account seu_usuario` e cole, **no prompt oculto**, um JSON em uma única linha com este formato:
+
+```json
+{"sessionid":"VALOR_DA_SESSAO","csrftoken":"VALOR_CSRF","ds_user_id":"123456789"}
+```
+
+Os valores reais não devem ser digitados no comando do shell, em opções da CLI nem em arquivos versionados. A leitura também aceita um JSON fornecido por stdin até EOF, para integração com uma fonte segura; não é necessário criar arquivo intermediário. A entrada é limitada a 32 KiB.
+
+Na biblioteca, use `await insta.importCookies(cookies, { account: 'seu_usuario' })` depois de `open()`. O método aceita o objeto acima ou uma lista restrita de objetos `name`/`value` com atributos de cookie. Rejeita nomes extras, duplicados, valores inválidos, domínios externos, URLs não oficiais, caminhos diferentes de `/` e atributos inseguros.
+
+Os três cookies são instalados para `.instagram.com`, raiz `/`, com `secure: true`; `sessionid` é HttpOnly. Sem expiração fornecida, a persistência local é limitada a sete dias. Isso não prolonga a validade da sessão no servidor. Uma expiração explícita válida é preservada; `expires: -1` indica cookie de sessão.
+
+A importação abre a página inicial apenas para leitura e confere username e ID. Não publica nem submete senha. Se a conta divergir, a sessão não for confirmada ou houver falha, tenta restaurar os três cookies anteriores. Valores de cookies nunca são retornados, impressos ou gravados em relatórios; o perfil persistente do Chrome armazena a sessão e deve permanecer protegido.
+
+Depois de confirmada a importação, `login()` reutiliza a sessão válida antes de considerar qualquer senha. Cookies expirados ou recusados ainda podem exigir reautenticação ou verificação do Instagram. Esta funcionalidade tem testes sem rede e validação de atributos em navegador com cookies sintéticos; a importação real no PRD deve ser validada separadamente.
 
 O navegador funciona em modo headless por padrão. Configure `IG_PROFILE_DIR` para usar um diretório persistente de sessão e execute um processo por perfil de navegador.
 

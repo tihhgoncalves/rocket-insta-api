@@ -2,6 +2,11 @@
 
 ## Alterações após 0.0.1
 
+- Adiciona `InstagramBrowser.importCookies()` para importar somente `sessionid`, `csrftoken` e `ds_user_id`, com domínio/atributos restritos e confirmação de username e ID por leitura.
+- Adiciona `npm run import-cookies`, com entrada padrão oculta no terminal ou JSON por pipe; valores não são aceitos em argumentos nem registrados.
+- Restaura os cookies anteriores quando a importação não é confirmada e mantém o reaproveitamento de sessão pelo login normal, sem enviar senha quando a identidade já estiver válida.
+- Inclui testes sem rede para validação, restauração, leitura oculta e bloqueio de argumentos, além de atributos de cookies sintéticos no Chrome headless.
+
 - Classifica a etapa posterior ao envio do login por estados do formulário e respostas de autenticação sanitizadas.
 - Detecta variantes de campo de código, aprovação em outro dispositivo e telas de confirmação após login.
 - Em timeout, expõe `error.diagnostics`, `getLastLoginDiagnostics()` e o evento `login_diagnostic`, sem reenviar credenciais.

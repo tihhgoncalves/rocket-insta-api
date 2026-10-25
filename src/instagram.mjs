@@ -7,6 +7,7 @@ import { extractProfile, extractViewer, normalizeUsername } from './profile.mjs'
 import { buildPublication } from './payload.mjs';
 import { readLoginState, fillAndSubmit, AuthError } from './auth.mjs';
 import { classifyAuthResponse, readAuthPageSummary, summarizeLogin } from './login-diagnostics.mjs';
+import { normalizeSessionCookies, isSessionCookie } from './cookies.mjs';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const ORIGIN = 'https://www.instagram.com';
@@ -55,6 +56,38 @@ export class InstagramBrowser {
     const id = cookies.find(c => c.name === 'ds_user_id' && /(^|\.)instagram\.com$/.test(c.domain))?.value;
     if (!id || !cookies.some(c => c.name === 'sessionid' && /(^|\.)instagram\.com$/.test(c.domain))) return null;
     return extractViewer(await this.documents(), id);
+  }
+  async importCookies(input, { account } = {}) {
+    account = normalizeUsername(account);
+    const imported = normalizeSessionCookies(input);
+    if (!this.browser || !this.page) throw new AuthError('BROWSER_REQUIRED', 'Abra o navegador antes de importar cookies.');
+    let previous;
+    try { previous = (await this.browser.cookies()).filter(isSessionCookie); }
+    catch { throw new AuthError('COOKIE_IMPORT_FAILED', 'Não foi possível consultar a sessão atual.'); }
+    try {
+      if (previous.length) await this.browser.deleteCookie(...previous);
+      await this.browser.setCookie(...imported);
+      await this.navigate('/');
+      const viewer = await this.viewer();
+      if (!viewer) throw new AuthError('COOKIE_SESSION_UNCONFIRMED', 'A sessão importada não foi confirmada. Pode estar expirada ou exigir verificação.');
+      if (viewer.username !== account || viewer.id !== imported.find(cookie => cookie.name === 'ds_user_id').value) {
+        throw new AuthError('COOKIE_ACCOUNT_MISMATCH', 'A sessão importada não pertence à conta esperada.');
+      }
+      this.cache.clear();
+      return { id: viewer.id, username: viewer.username };
+    } catch (error) {
+      try {
+        const current = (await this.browser.cookies()).filter(isSessionCookie);
+        if (current.length) await this.browser.deleteCookie(...current);
+        if (previous.length) await this.browser.setCookie(...previous.map(cookie => ({
+          name: cookie.name, value: cookie.value, domain: cookie.domain, path: cookie.path,
+          secure: cookie.secure, httpOnly: cookie.httpOnly, sameSite: cookie.sameSite,
+          ...(cookie.expires > 0 ? { expires: cookie.expires } : {}),
+        })));
+      } catch { throw new AuthError('COOKIE_ROLLBACK_FAILED', 'Falha ao restaurar a sessão anterior; confira o perfil antes de continuar.'); }
+      if (error instanceof AuthError) throw error;
+      throw new AuthError('COOKIE_IMPORT_FAILED', 'Importação não confirmada; a sessão anterior foi restaurada.');
+    }
   }
   getLastLoginDiagnostics() { return this.lastLoginDiagnostics; }
 

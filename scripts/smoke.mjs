@@ -8,6 +8,7 @@ import { InstagramBrowser } from '../src/instagram.mjs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFile, unlink } from 'node:fs/promises';
+import { normalizeSessionCookies, isSessionCookie } from '../src/cookies.mjs';
 
 const browser = await puppeteer.launch({ headless: true });
 try {
@@ -69,7 +70,14 @@ try {
     await page.setContent(fixture.html);
     assert.equal((await page.evaluate(readLoginState)).state, fixture.state);
   }
-  console.log(JSON.stringify({ browser: await browser.version(), renderedProfileParser: 'ok', cookieApi: 'ok',
+  await browser.setCookie(...normalizeSessionCookies({ sessionid: 'synthetic-session', csrftoken: 'synthetic-csrf', ds_user_id: '123456789' }));
+  const syntheticCookies = (await browser.cookies()).filter(isSessionCookie);
+  assert.equal(syntheticCookies.length, 3);
+  assert.ok(syntheticCookies.every(cookie => cookie.secure && cookie.domain === '.instagram.com' && cookie.path === '/'));
+  assert.equal(syntheticCookies.find(cookie => cookie.name === 'sessionid').httpOnly, true);
+  await browser.deleteCookie(...syntheticCookies);
+  assert.equal((await browser.cookies()).filter(isSessionCookie).length, 0);
+  console.log(JSON.stringify({ browser: await browser.version(), renderedProfileParser: 'ok', cookieApi: 'ok', cookieImportAttributes: 'ok',
     loginForm: 'ok', verificationForm: 'ok', loginVariants: loginFixtures.length,
     ambiguousButtons: 'rejected', sanitizedDiagnostic: 'ok', postSubmitStates: 'ok', network: 'no Instagram requests' }, null, 2));
 } finally { await browser.close(); }
