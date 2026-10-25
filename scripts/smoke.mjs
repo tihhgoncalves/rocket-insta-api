@@ -4,6 +4,10 @@ import assert from 'node:assert/strict';
 import { extractProfile } from '../src/profile.mjs';
 import { readLoginState, fillAndSubmit } from '../src/auth.mjs';
 import { loginFixtures } from './auth-fixtures.mjs';
+import { InstagramBrowser } from '../src/instagram.mjs';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { readFile, unlink } from 'node:fs/promises';
 
 const browser = await puppeteer.launch({ headless: true });
 try {
@@ -43,7 +47,29 @@ try {
   // Botões com o mesmo nome sem formulário inequívoco não devem ser escolhidos.
   await page.setContent('<input name="email"><input name="pass" type="password"><button>Log in</button><button>Log in</button>');
   assert.equal((await page.evaluate(readLoginState)).submit, null);
+  const diagnosticClient = new InstagramBrowser({ profileDir: resolve(fileURLToPath(new URL('../', import.meta.url)), '.local/diagnostics-smoke') });
+  diagnosticClient.browser = browser;
+  diagnosticClient.page = page;
+  await page.setContent('<div role="alert">private-token private-contact</div><input name="password" type="text" value="synthetic-secret">');
+  const diagnostic = await diagnosticClient.captureLoginDiagnostics('credentials', []);
+  assert.equal(diagnostic.classification, 'feedback_present');
+  const saved = await readFile(diagnostic.artifacts.json, 'utf8');
+  assert.doesNotMatch(saved, /private-token|private-contact|synthetic-secret/);
+  assert.ok((await readFile(diagnostic.artifacts.screenshot)).length > 0);
+  assert.ok(await page.evaluate(() => document.body.innerText.includes('private-token')));
+  // A captura não altera a página original nem inclui seu conteúdo.
+  await unlink(diagnostic.artifacts.json);
+  await unlink(diagnostic.artifacts.screenshot);
+  for (const fixture of [
+    { html: '<p>Verification code</p><input inputmode="numeric" maxlength="6"><button>Confirm</button>', state: 'code_required' },
+    { html: '<p>Check another device to approve your login</p>', state: 'approval_required' },
+    { html: '<p>Enviamos um código de verificação</p>', state: 'verification_pending' },
+    { html: '<p>Save your login info</p>', state: 'post_login_prompt' },
+  ]) {
+    await page.setContent(fixture.html);
+    assert.equal((await page.evaluate(readLoginState)).state, fixture.state);
+  }
   console.log(JSON.stringify({ browser: await browser.version(), renderedProfileParser: 'ok', cookieApi: 'ok',
     loginForm: 'ok', verificationForm: 'ok', loginVariants: loginFixtures.length,
-    ambiguousButtons: 'rejected', network: 'no Instagram requests' }, null, 2));
+    ambiguousButtons: 'rejected', sanitizedDiagnostic: 'ok', postSubmitStates: 'ok', network: 'no Instagram requests' }, null, 2));
 } finally { await browser.close(); }

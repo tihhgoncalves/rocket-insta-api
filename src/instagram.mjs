@@ -1,11 +1,12 @@
 import puppeteer from 'puppeteer';
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, chmod } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { extractProfile, extractViewer, normalizeUsername } from './profile.mjs';
 import { buildPublication } from './payload.mjs';
 import { readLoginState, fillAndSubmit, AuthError } from './auth.mjs';
+import { classifyAuthResponse, readAuthPageSummary, summarizeLogin } from './login-diagnostics.mjs';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const ORIGIN = 'https://www.instagram.com';
@@ -16,6 +17,7 @@ export class InstagramBrowser {
     this.options = { headless, profileDir };
     this.events = [];
     this.cache = new Map();
+    this.lastLoginDiagnostics = null;
   }
   async open() {
     await mkdir(this.options.profileDir, { recursive: true, mode: 0o700 });
@@ -54,8 +56,85 @@ export class InstagramBrowser {
     if (!id || !cookies.some(c => c.name === 'sessionid' && /(^|\.)instagram\.com$/.test(c.domain))) return null;
     return extractViewer(await this.documents(), id);
   }
-  async login({ account, username = account, password, requestCode,
-    onEvent = () => {}, manual = false, timeout = 120000 } = {}) {
+  getLastLoginDiagnostics() { return this.lastLoginDiagnostics; }
+
+  async captureLoginDiagnostics(state, responses) {
+    const page = await this.page.evaluate(readAuthPageSummary).catch(() => ({}));
+    const cookies = await this.browser.cookies().catch(() => []);
+    const hasCookie = name => cookies.some(cookie => cookie.name === name && /(^|\.)instagram\.com$/.test(cookie.domain));
+    const frameSecurityPresent = (this.page.frames?.() ?? []).some(frame => {
+      try { return /challenge|checkpoint|captcha/.test(new URL(frame.url()).pathname); } catch { return false; }
+    });
+    const summary = summarizeLogin({ page, state, responses, frameSecurityPresent,
+      sessionCookiePresent: hasCookie('sessionid'), userIdCookiePresent: hasCookie('ds_user_id') });
+    const artifacts = {};
+    // Dentro do perfil gravável: funciona quando o pacote está instalado como somente leitura no VPS.
+    const directory = resolve(this.options.profileDir, 'rocket-diagnostics');
+    try {
+      await mkdir(directory, { recursive: true, mode: 0o700 });
+      const base = resolve(directory, `${Date.now()}-login`);
+      artifacts.json = `${base}.json`;
+      await writeFile(artifacts.json, JSON.stringify(summary, null, 2), { mode: 0o600 });
+      let diagnosticPage;
+      try {
+        // Nunca fotografar a página de login: apenas um painel local com os dados permitidos.
+        diagnosticPage = await this.browser.newPage();
+        await diagnosticPage.setJavaScriptEnabled(false);
+        const escaped = JSON.stringify(summary, null, 2).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+        await diagnosticPage.setContent(`<html><head><meta charset="utf-8"></head><body style="font:16px monospace;padding:24px"><h1>Diagnóstico sanitizado do login</h1><p>Painel local. Não é uma captura da página original.</p><pre>${escaped}</pre></body></html>`);
+        artifacts.screenshot = `${base}.png`;
+        await diagnosticPage.screenshot({ path: artifacts.screenshot, fullPage: true });
+        await chmod(artifacts.screenshot, 0o600);
+      } catch { delete artifacts.screenshot; }
+      finally { if (diagnosticPage) await diagnosticPage.close().catch(() => {}); }
+    } catch { delete artifacts.json; }
+    return { ...summary, artifacts };
+  }
+
+  async login(options = {}) {
+    this.lastLoginDiagnostics = null;
+    this.lastLoginState = 'unknown';
+    const responses = [];
+    const observe = async response => {
+      try {
+        const url = new URL(response.url());
+        const request = response.request();
+        if (!/(^|\.)instagram\.com$/.test(url.hostname) || request.method() !== 'POST') return;
+        let source;
+        if (/\/accounts\/login\/ajax\/?$/.test(url.pathname) || /\/accounts\/login\/?$/.test(url.pathname)) source = 'login';
+        else if (/graphql/.test(url.pathname)) {
+          const body = request.postData() ?? '';
+          if (body.length > 1024 * 1024) return;
+          const operation = new URLSearchParams(body).get('fb_api_req_friendly_name');
+          if (!operation || !/login|authenticate/i.test(operation)) return;
+          source = 'graphql';
+        }
+        if (!source) return;
+        let data = null;
+        try { data = await response.json(); } catch { /* não guardar corpo de resposta */ }
+        const classified = classifyAuthResponse(response.status(), data, source);
+        responses.push(classified);
+        if (responses.length > 10) responses.shift();
+        options.onEvent?.({ event: 'login_response', ...classified });
+      } catch { /* observação nunca interrompe a autenticação */ }
+    };
+    this.page.on?.('response', observe);
+    try { return await this.runLogin({ ...options, responses }); }
+    catch (error) {
+      if (['LOGIN_TIMEOUT', 'SECURITY_CHALLENGE', 'CODE_REQUIRED', 'APPROVAL_REQUIRED', 'RATE_LIMITED', 'LOGIN_REJECTED'].includes(error.code)) {
+        try {
+          this.lastLoginDiagnostics = await this.captureLoginDiagnostics(this.lastLoginState, responses);
+          error.diagnostics = this.lastLoginDiagnostics;
+          if (error.code === 'LOGIN_TIMEOUT') error.message += ` Diagnóstico: ${this.lastLoginDiagnostics.classification}.`;
+          options.onEvent?.({ event: 'login_diagnostic', diagnostic: this.lastLoginDiagnostics });
+        } catch { /* preservar o erro original; nunca capturar screenshot bruto como fallback */ }
+      }
+      throw error;
+    } finally { this.page.off?.('response', observe); }
+  }
+
+  async runLogin({ account, username = account, password, requestCode,
+    onEvent = () => {}, manual = false, timeout = 120000, responses = [] } = {}) {
     account = normalizeUsername(account);
     if (normalizeUsername(username) !== account) throw new AuthError('ACCOUNT_MISMATCH', 'Credenciais e conta esperada são diferentes.');
     if (manual && this.options.headless) throw new AuthError('MANUAL_REQUIRES_WINDOW', 'Login manual só é permitido com --headed.');
@@ -63,6 +142,7 @@ export class InstagramBrowser {
     const deadline = Date.now() + timeout;
     let submitted = false;
     let codeSubmitted = false;
+    this.lastLoginState = 'loading';
     while (Date.now() < deadline) {
       const viewer = await this.viewer().catch(() => null);
       if (viewer) {
@@ -72,7 +152,17 @@ export class InstagramBrowser {
       }
       if (!this.browser.connected) throw new Error('Navegador foi fechado antes de concluir o login.');
       const state = await this.page.evaluate(readLoginState).catch(() => ({ state: 'loading' }));
+      if (state.state !== this.lastLoginState) {
+        this.lastLoginState = state.state;
+        onEvent({ event: 'login_state', state: state.state });
+      }
       if (manual) { await delay(1000); continue; }
+      const outcomes = new Set(responses.map(response => response.outcome));
+      if (outcomes.has('rate_limited')) throw new AuthError('RATE_LIMITED', 'Instagram limitou a resposta do login; nenhum reenvio foi feito.');
+      if (outcomes.has('security_challenge')) throw new AuthError('SECURITY_CHALLENGE', 'A resposta de login indica verificação de segurança.');
+      if (outcomes.has('invalid_credentials')) throw new AuthError('INVALID_CREDENTIALS', 'A resposta de login recusou as credenciais.');
+      if (outcomes.has('login_rejected')) throw new AuthError('LOGIN_REJECTED', 'Instagram recusou o login; detalhes remotos foram omitidos.');
+      if (state.state === 'approval_required') throw new AuthError('APPROVAL_REQUIRED', 'Instagram pede aprovação em outro dispositivo. Nenhum reenvio foi feito.');
       if (state.state === 'rate_limited') throw new AuthError('RATE_LIMITED', 'Instagram limitou o login; nenhuma repetição foi feita.');
       if (state.state === 'invalid_credentials') throw new AuthError('INVALID_CREDENTIALS', 'Instagram recusou as credenciais.');
       if (state.state === 'invalid_code') throw new AuthError('INVALID_VERIFICATION_CODE', 'Instagram recusou o código; nenhuma nova tentativa foi feita.');

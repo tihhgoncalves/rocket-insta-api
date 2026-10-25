@@ -3,6 +3,9 @@ export function readLoginState({ waitForSubmit = false } = {}) {
   const visible = element => element && !element.closest('[hidden],[aria-hidden="true"]') &&
     element.getClientRects().length > 0 &&
     (typeof element.checkVisibility !== 'function' || element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }));
+  const text = (document.body?.innerText ?? '').toLowerCase();
+  const path = location.pathname;
+  const verificationContext = /two_factor|two_step|verification|security code|verification code|authentication code|código de (?:segurança|verificação)/.test(`${path} ${text}`);
   const find = selectors => {
     for (const selector of selectors) {
       const element = [...document.querySelectorAll(selector)].find(visible);
@@ -26,8 +29,10 @@ export function readLoginState({ waitForSubmit = false } = {}) {
   };
   const usernameField = find(['input[name="username"]', 'input[name="email"]', 'input[autocomplete~="username"]']);
   const passwordField = find(['input[name="password"]', 'input[name="pass"]', 'input[type="password"]']);
-  const codeField = find(['input[name="verificationCode"]', 'input[name="security_code"]',
-    'input[name="approvals_code"]', 'input[autocomplete="one-time-code"]', 'input[name="code"]']);
+  const codeField = find(['input[name="verificationCode"]', 'input[name="verification_code"]',
+    'input[name="security_code"]', 'input[name="securityCode"]', 'input[name="two_factor_code"]',
+    'input[name="approvals_code"]', 'input[autocomplete="one-time-code"]', 'input[name="code"]',
+    ...(verificationContext ? ['input[inputmode="numeric"][maxlength="6"]', 'input[inputmode="numeric"][maxlength="8"]'] : [])]);
   const activeField = codeField || passwordField;
   const form = activeField?.form;
   const normalize = value => value.replace(/\s+/g, ' ').trim().toLowerCase();
@@ -49,14 +54,15 @@ export function readLoginState({ waitForSubmit = false } = {}) {
   }
   // Nomes duplicados/ambíguos não justificam clicar no primeiro botão da página.
   const submit = candidates.length === 1 ? selectorFor(candidates[0]) : null;
-  const text = (document.body?.innerText ?? '').toLowerCase();
-  const path = location.pathname;
   if (document.querySelector('iframe[src*="captcha"], iframe[title*="reCAPTCHA"]') || /captcha/.test(path)) return { state: 'visual_challenge' };
+  if (/please wait a few minutes|aguarde alguns minutos|try again later|tente novamente mais tarde/.test(text)) return { state: 'rate_limited' };
   if (codeField && /incorrect security code|incorrect code|código incorreto|código inválido/.test(text)) return { state: 'invalid_code' };
   if (codeField) return waitForSubmit && !submit ? false : { state: 'code_required', code: selectorFor(codeField), submit };
   if (/\/(challenge|checkpoint)\//.test(path)) return { state: 'security_challenge' };
+  if (/check another device|check your notifications on another device|aprove (?:esta|a) solicitação|aprovar.*(?:acesso|solicitação)|confira.*outro dispositivo/.test(text)) return { state: 'approval_required' };
   if (/incorrect password|senha incorreta|password was incorrect|senha está incorreta/.test(text)) return { state: 'invalid_credentials' };
-  if (/please wait a few minutes|aguarde alguns minutos|try again later|tente novamente mais tarde/.test(text)) return { state: 'rate_limited' };
+  if (verificationContext) return { state: 'verification_pending' };
+  if (/save your login|salvar.*(?:login|acesso)|turn on notifications|ativar notificações/.test(text)) return { state: 'post_login_prompt' };
   if (usernameField && passwordField) return waitForSubmit && !submit ? false : {
     state: 'credentials', username: selectorFor(usernameField), password: selectorFor(passwordField), submit,
   };
@@ -94,6 +100,7 @@ export async function fillAndSubmit(page, fields, values) {
     invalid_code: ['INVALID_VERIFICATION_CODE', 'Instagram recusou o código.'],
     visual_challenge: ['SECURITY_CHALLENGE', 'Instagram exige verificação de segurança.'],
     security_challenge: ['SECURITY_CHALLENGE', 'Instagram exige verificação de segurança.'],
+    approval_required: ['APPROVAL_REQUIRED', 'Instagram pede aprovação em outro dispositivo.'],
   };
   if (errors[ready?.state]) throw new AuthError(...errors[ready.state]);
   if (!ready?.submit || ready.state !== fields.state) throw new AuthError('FORM_CHANGED', 'O formulário mudou antes do envio; operação interrompida.');

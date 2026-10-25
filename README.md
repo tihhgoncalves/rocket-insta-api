@@ -126,6 +126,10 @@ Se o Instagram apresentar um formulário de código compatível, a CLI solicita 
 
 O login aguarda o botão de envio aparecer e ficar habilitado após preencher os campos, por até 15 segundos. Se o formulário continuar indisponível ou houver botões ambíguos, retorna `FORM_CHANGED` sem clicar. Um clique que falhar não é repetido automaticamente.
 
+Após o envio, os eventos `login_state` e `login_response` informam somente categorias conhecidas. Em caso de timeout, `login_diagnostic` e `error.diagnostics` incluem indicadores como código pendente, aprovação em outro dispositivo, resposta recusada ou cookies presentes sem sessão confirmada. Na biblioteca, `getLastLoginDiagnostics()` também retorna esse diagnóstico, quando disponível.
+
+O relatório JSON e a imagem sanitizada são gravados em `rocket-diagnostics/`, dentro do diretório do perfil, quando houver permissão de escrita. A imagem mostra um painel local com os indicadores permitidos; **não fotografa a página original**. Não inclui conteúdo da tela, campos preenchidos, mensagens remotas, URLs completas nem valores de cookies. Se o relatório não puder ser gravado, o erro original é preservado. Não há reenvio da senha para gerar o diagnóstico.
+
 Para desenvolvimento local com janela visível:
 
 ```sh

@@ -74,9 +74,7 @@ async function main() {
       console.log(JSON.stringify({ publication: result, verification, screenshot }, null, 2));
     }
   } catch (error) {
-    if (error.code === 'SECURITY_CHALLENGE' || error.code === 'CODE_REQUIRED') {
-      try { console.error(JSON.stringify({ diagnosticScreenshot: await client.screenshot('auth-challenge') })); } catch { /* erro original preservado */ }
-    }
+    if (error.diagnostics) console.error(JSON.stringify({ loginDiagnostic: error.diagnostics }));
     throw error;
   } finally { await client.close(); }
 }

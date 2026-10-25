@@ -2,6 +2,12 @@
 
 ## Alterações após 0.0.1
 
+- Classifica a etapa posterior ao envio do login por estados do formulário e respostas de autenticação sanitizadas.
+- Detecta variantes de campo de código, aprovação em outro dispositivo e telas de confirmação após login.
+- Em timeout, expõe `error.diagnostics`, `getLastLoginDiagnostics()` e o evento `login_diagnostic`, sem reenviar credenciais.
+- Gera relatório JSON e painel PNG local sanitizado no perfil gravável; nunca captura a página original de autenticação.
+- Preserva o sandbox, omite mensagens/corpos remotos e não confunde cookies presentes com identidade confirmada.
+
 - O login aguarda até 15 segundos por um botão de envio reconhecido e habilitado após preencher os campos.
 - Reconhece botões nativos, inclusive sem `type`, e controles com `role="button"`, com variações de idioma e capitalização.
 - Restringe a escolha ao formulário quando possível, ignora controles ocultos e rejeita botões ambíguos.
