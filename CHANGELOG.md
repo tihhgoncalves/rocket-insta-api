@@ -1,5 +1,14 @@
 # Changelog
 
+## Alterações após 0.0.1
+
+- O login aguarda até 15 segundos por um botão de envio reconhecido e habilitado após preencher os campos.
+- Reconhece botões nativos, inclusive sem `type`, e controles com `role="button"`, com variações de idioma e capitalização.
+- Restringe a escolha ao formulário quando possível, ignora controles ocultos e rejeita botões ambíguos.
+- Reavalia os seletores após o preenchimento, sem repetir o envio em caso de falha ou resultado incerto.
+- Adiciona regressões sem rede e quatro variantes sintéticas de formulário no Chrome headless.
+- Validação local; o login de produção no Ubuntu deve ser confirmado separadamente. Nenhuma publicação ou envio de credenciais foi realizado para investigar esta correção.
+
 ## 0.0.1 — beta — 2026-10-25
 
 Início da implementação Node.js do Rocket Insta API.

@@ -124,6 +124,8 @@ No Linux, instale as bibliotecas de sistema exigidas pelo Chrome e execute com u
 
 Se o Instagram apresentar um formulário de código compatível, a CLI solicita o código no terminal interativo. Na biblioteca, use o callback `requestCode`. CAPTCHA e outros desafios visuais interrompem o fluxo com diagnóstico; não são resolvidos automaticamente.
 
+O login aguarda o botão de envio aparecer e ficar habilitado após preencher os campos, por até 15 segundos. Se o formulário continuar indisponível ou houver botões ambíguos, retorna `FORM_CHANGED` sem clicar. Um clique que falhar não é repetido automaticamente.
+
 Para desenvolvimento local com janela visível:
 
 ```sh

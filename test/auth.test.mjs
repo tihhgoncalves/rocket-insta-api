@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { InstagramBrowser } from '../src/instagram.mjs';
+import { fillAndSubmit } from '../src/auth.mjs';
 
 function mock(state, { authenticated = false } = {}) {
   const client = new InstagramBrowser();
@@ -11,6 +12,7 @@ function mock(state, { authenticated = false } = {}) {
   client.viewer = async () => (authenticated || submitted) ? { username: 'example', id: '123' } : null;
   client.page = {
     evaluate: async () => state,
+    waitForFunction: async () => ({ jsonValue: async () => state, dispose: async () => {} }),
     locator: selector => ({
       fill: async value => entries.push({ selector, value }),
       click: async () => { submitted = true; },
@@ -61,4 +63,43 @@ test('bloqueios e desafios não geram tentativas automáticas', async () => {
 test('login manual não é permitido sem interface', async () => {
   const { client } = mock({});
   await assert.rejects(client.login({ account: 'example', manual: true }), { code: 'MANUAL_REQUIRES_WINDOW' });
+});
+
+test('botão ausente inicialmente é redetectado depois do preenchimento', async () => {
+  const clicked = [];
+  const filled = [];
+  const page = {
+    locator: selector => ({ fill: async value => filled.push([selector, value]), click: async () => clicked.push(selector) }),
+    waitForFunction: async () => ({ jsonValue: async () => ({ state: 'credentials', submit: '#ready' }), dispose: async () => {} }),
+  };
+  await fillAndSubmit(page, { state: 'credentials', username: '#user', password: '#pass', submit: null }, { username: 'example', password: 'synthetic' });
+  assert.equal(filled.length, 2);
+  assert.deepEqual(clicked, ['#ready']);
+});
+
+test('timeout de detecção não envia nem expõe detalhes sensíveis', async () => {
+  const page = {
+    locator: () => ({ fill: async () => {}, click: async () => assert.fail('Não deve clicar') }),
+    waitForFunction: async () => { throw new Error('raw-sensitive-response'); },
+  };
+  await assert.rejects(fillAndSubmit(page, { state: 'credentials', username: '#user', password: '#pass' }, { username: 'example', password: 'synthetic' }),
+    error => error.code === 'FORM_CHANGED' && !error.message.includes('raw-sensitive'));
+});
+
+test('limitação detectada enquanto aguarda o botão impede o envio', async () => {
+  const page = {
+    locator: () => ({ fill: async () => {}, click: async () => assert.fail('Não deve clicar') }),
+    waitForFunction: async () => ({ jsonValue: async () => ({ state: 'rate_limited' }), dispose: async () => {} }),
+  };
+  await assert.rejects(fillAndSubmit(page, { state: 'credentials', username: '#user', password: '#pass' }, { username: 'example', password: 'synthetic' }), { code: 'RATE_LIMITED' });
+});
+
+test('clique com resultado incerto não é repetido', async () => {
+  let clicks = 0;
+  const page = {
+    locator: () => ({ fill: async () => {}, click: async () => { clicks++; throw new Error('uncertain'); } }),
+    waitForFunction: async () => ({ jsonValue: async () => ({ state: 'credentials', submit: '#ready' }), dispose: async () => {} }),
+  };
+  await assert.rejects(fillAndSubmit(page, { state: 'credentials', username: '#user', password: '#pass' }, { username: 'example', password: 'synthetic' }), { code: 'FORM_INTERACTION_FAILED' });
+  assert.equal(clicks, 1);
 });
