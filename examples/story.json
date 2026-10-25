@@ -1,0 +1,6 @@
+{
+  "account": "seu_usuario",
+  "image": "../assets/test.jpg",
+  "caption": "Meu story de teste!",
+  "mentions": ["usuario_exemplo"]
+}

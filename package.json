@@ -1,0 +1,26 @@
+{
+  "name": "rocket-insta-api",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "API beta de automação do Instagram em Node.js com Puppeteer e sessão persistente.",
+  "license": "MIT",
+  "exports": "./src/index.mjs",
+  "bin": { "rocket-insta-api": "./src/cli.mjs" },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "login": "node src/cli.mjs login",
+    "lookup": "node src/cli.mjs lookup",
+    "feed": "node src/cli.mjs feed",
+    "story": "node src/cli.mjs story",
+    "inspect": "node src/cli.mjs inspect",
+    "test": "node --test",
+    "test:browser": "node scripts/smoke.mjs",
+    "check": "node scripts/check.mjs"
+  },
+  "dependencies": {
+    "puppeteer": "25.16.0"
+  }
+}

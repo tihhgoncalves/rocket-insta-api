@@ -1,0 +1,7 @@
+{
+  "account": "seu_usuario",
+  "image": "../assets/test.jpg",
+  "caption": "Minha publicação em colaboração!",
+  "mentions": [],
+  "collaborators": ["usuario_exemplo"]
+}

@@ -1,0 +1,9 @@
+{
+  "account": "seu_usuario",
+  "image": "../assets/test.jpg",
+  "caption": "Minha publicação de teste!",
+  "mentions": ["usuario_exemplo"],
+  "collaborators": [],
+  "hideLikes": false,
+  "disableComments": false
+}
